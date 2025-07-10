@@ -1,49 +1,56 @@
-# Dockerfile for the agent container
-FROM debian:bookworm-slim
+# Base image
+FROM ubuntu:22.04
 
-# Set frontend to noninteractive
+# Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # VNC and X server
-    xvfb tigervnc-standalone-server novnc x11vnc tigervnc-tools net-tools \
-    # GUI control
+RUN apt-get update && apt-get install -y \
+    sudo \
+    fluxbox \
+    xterm \
+    x11vnc \
+    xvfb \
     xdotool \
-    # Python and tools
-    python3 python3-pip \
-    # NodeJS and tools
-    nodejs npm \
-    # Other essentials
-    curl git sudo \
-    && rm -rf /var/lib/apt/lists/*
+    python3 \
+    python3-pip \
+    curl \
+    git \
+    nodejs \
+    npm \
+    websockify \
+    --no-install-recommends && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Set up a non-root user 'agent'
+# Setup VNC password
+RUN mkdir -p /root/.vnc && x11vnc -storepasswd agent /root/.vnc/passwd
+
+# Setup noVNC from source
+RUN curl -L "https://github.com/novnc/noVNC/archive/refs/tags/v1.4.0.tar.gz" | tar -xz -C /usr/local/ && \
+    ln -s /usr/local/noVNC-1.4.0/vnc.html /usr/local/noVNC-1.4.0/index.html
+
+# Create a non-root user 'agent'
 RUN useradd -m -s /bin/bash agent && \
-    adduser agent sudo && \
-    echo "agent ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+    echo "agent:agent" | chpasswd && \
+    adduser agent sudo
 
-# Set up VNC
-RUN mkdir -p /home/agent/.vnc && \
-    echo "agent_password" | vncpasswd -f > /home/agent/.vnc/passwd && \
-    chown -R agent:agent /home/agent/.vnc && \
-    chmod 600 /home/agent/.vnc/passwd
+# Set up home directory and copy agent files
+WORKDIR /home/agent
+COPY --chown=agent:agent ../agent ./agent
+RUN pip3 install -r agent/requirements.txt --no-cache-dir
 
-# Copy startup script
+# Copy start script and make it executable
 COPY docker/start.sh /home/agent/start.sh
-RUN chown agent:agent /home/agent/start.sh && \
-    chmod +x /home/agent/start.sh
+RUN chown agent:agent /home/agent/start.sh && chmod +x /home/agent/start.sh
 
-# Copy agent code
-COPY agent /home/agent/agent
-RUN chown -R agent:agent /home/agent/agent
-
-# Switch to the 'agent' user
-USER agent
-WORKDIR /home/agent/workspace
-
-# Expose VNC port
+# Expose VNC and noVNC ports
+EXPOSE 5900
 EXPOSE 6080
 
-# Command to run on startup
-CMD ["/home/agent/start.sh"] 
+# Switch to agent user
+USER agent
+WORKDIR /home/agent
+
+# Set the entrypoint
+ENTRYPOINT ["/home/agent/start.sh"] 
