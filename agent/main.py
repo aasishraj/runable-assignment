@@ -243,7 +243,7 @@ def main():
         pruned_history = prune_conversation_history(conversation_history)
 
         response = client.chat.completions.create(
-            model="gpt-4-turbo-preview",
+            model="gpt-4o-mini",
             messages=pruned_history,  # type: ignore
             response_format={"type": "json_object"},
         )
